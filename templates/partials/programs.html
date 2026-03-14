@@ -1,0 +1,60 @@
+<!-- Add Program Form -->
+<form
+    hx-post="/programs"
+    hx-target="#program-rows"
+    hx-swap="afterbegin"
+    hx-on::after-request="this.reset()"
+    class="bg-white p-6 rounded shadow mb-6 grid grid-cols-2 gap-4"
+>
+    <div>
+        <label class="block text-sm font-medium mb-1">Program Name</label>
+        <input name="name" required placeholder="e.g. PPL"
+            class="w-full border rounded px-3 py-2 text-sm" />
+    </div>
+    <div>
+        <label class="block text-sm font-medium mb-1">Description</label>
+        <input name="description" placeholder="Optional"
+            class="w-full border rounded px-3 py-2 text-sm" />
+    </div>
+    <div class="col-span-2">
+        <button type="submit"
+            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">
+            Add Program
+        </button>
+    </div>
+</form>
+
+<!-- Program Table -->
+<div class="bg-white rounded shadow overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-left">
+            <tr>
+                <th class="p-2 border">Program</th>
+                <th class="p-2 border">Description</th>
+                <th class="p-2 border w-32"></th>
+            </tr>
+        </thead>
+        <tbody id="program-rows">
+            {% for p in programs %}
+            <tr id="program-{{ p['id'] }}">
+                <td class="p-2 border">{{ p['name'] }}</td>
+                <td class="p-2 border text-gray-500">{{ p['description'] or '—' }}</td>
+                <td class="p-2 border text-center">
+                    <button hx-get="/programs/{{ p['id'] }}"
+                            hx-target="#content" hx-swap="innerHTML"
+                            class="text-blue-600 hover:underline text-xs">View</button>
+                    <button hx-get="/programs/{{ p['id'] }}/edit"
+                            hx-target="#program-{{ p['id'] }}" hx-swap="outerHTML"
+                            class="text-blue-600 hover:underline text-xs ml-2">Edit</button>
+                    <button hx-delete="/programs/{{ p['id'] }}"
+                            hx-target="#program-{{ p['id'] }}" hx-swap="outerHTML"
+                            hx-confirm="Delete this program and all its templates?"
+                            class="text-red-500 hover:underline text-xs ml-2">Delete</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="p-4 text-center text-gray-400">No programs yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

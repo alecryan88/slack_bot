@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Workout Tracker</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+
+    <!-- Nav -->
+    <nav class="bg-white shadow mb-8">
+        <div class="max-w-3xl mx-auto px-4 flex gap-1 py-3">
+            <button
+                class="tab-btn px-4 py-2 rounded text-sm font-medium bg-blue-600 text-white"
+                hx-get="/workouts" hx-target="#content" hx-swap="innerHTML"
+                onclick="setActive(this)">
+                Workouts
+            </button>
+            <button
+                class="tab-btn px-4 py-2 rounded text-sm font-medium text-gray-600 hover:bg-gray-100"
+                hx-get="/exercises" hx-target="#content" hx-swap="innerHTML"
+                onclick="setActive(this)">
+                Exercises
+            </button>
+            <button
+                class="tab-btn px-4 py-2 rounded text-sm font-medium text-gray-600 hover:bg-gray-100"
+                hx-get="/programs" hx-target="#content" hx-swap="innerHTML"
+                onclick="setActive(this)">
+                Programs
+            </button>
+        </div>
+    </nav>
+
+    <main id="content" class="max-w-3xl mx-auto px-4"
+          hx-get="/workouts" hx-trigger="load" hx-swap="innerHTML">
+    </main>
+
+    <script>
+        function setActive(el) {
+            document.querySelectorAll('.tab-btn').forEach(b => {
+                b.classList.remove('bg-blue-600', 'text-white');
+                b.classList.add('text-gray-600', 'hover:bg-gray-100');
+            });
+            el.classList.add('bg-blue-600', 'text-white');
+            el.classList.remove('text-gray-600', 'hover:bg-gray-100');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,91 @@
+<!-- Header -->
+<div class="flex items-center gap-4 mb-6">
+    <button hx-get="/programs/{{ template['program_id'] }}" hx-target="#content" hx-swap="innerHTML"
+        class="text-sm text-blue-600 hover:underline">← {{ template['program_name'] }}</button>
+    <div>
+        <h2 class="text-lg font-bold">{{ template['name'] }}</h2>
+        <p class="text-sm text-gray-500">{{ template['program_name'] }}</p>
+    </div>
+    <!-- Start Workout -->
+    <form hx-post="/workouts" hx-target="#content" hx-swap="innerHTML" class="ml-auto flex gap-2 items-center">
+        <input type="hidden" name="template_id" value="{{ template['id'] }}" />
+        <input name="date" type="date" value="{{ today }}" required
+            class="border rounded px-3 py-2 text-sm" />
+        <button type="submit"
+            class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-sm">
+            Start Workout
+        </button>
+    </form>
+</div>
+
+<!-- Add Exercise Form -->
+{% if exercises %}
+<form
+    hx-post="/templates/{{ template['id'] }}/exercises"
+    hx-target="#texercise-rows"
+    hx-swap="afterbegin"
+    hx-on::after-request="this.reset()"
+    class="bg-white p-6 rounded shadow mb-6 grid grid-cols-3 gap-4"
+>
+    <div>
+        <label class="block text-sm font-medium mb-1">Exercise</label>
+        <select name="exercise_id" required class="w-full border rounded px-3 py-2 text-sm">
+            <option value="">— Select —</option>
+            {% for e in exercises %}
+            <option value="{{ e['id'] }}">{{ e['name'] }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="block text-sm font-medium mb-1">Sets</label>
+        <input name="sets" type="number" min="1" required
+            class="w-full border rounded px-3 py-2 text-sm" />
+    </div>
+    <div>
+        <label class="block text-sm font-medium mb-1">Reps</label>
+        <input name="reps" type="number" min="1" required
+            class="w-full border rounded px-3 py-2 text-sm" />
+    </div>
+    <div class="col-span-3">
+        <button type="submit"
+            class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 text-sm">
+            Add Exercise
+        </button>
+    </div>
+</form>
+{% else %}
+<div class="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded p-4 mb-6">
+    No exercises found. Add some in the Exercises tab first.
+</div>
+{% endif %}
+
+<!-- Template Exercises Table -->
+<div class="bg-white rounded shadow overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50 text-left">
+            <tr>
+                <th class="p-2 border">Exercise</th>
+                <th class="p-2 border text-center">Sets</th>
+                <th class="p-2 border text-center">Reps</th>
+                <th class="p-2 border w-16"></th>
+            </tr>
+        </thead>
+        <tbody id="texercise-rows">
+            {% for te in texercises %}
+            <tr id="texercise-{{ te['id'] }}">
+                <td class="p-2 border">{{ te['exercise_name'] }}</td>
+                <td class="p-2 border text-center">{{ te['sets'] }}</td>
+                <td class="p-2 border text-center">{{ te['reps'] }}</td>
+                <td class="p-2 border text-center">
+                    <button hx-delete="/template-exercises/{{ te['id'] }}"
+                            hx-target="#texercise-{{ te['id'] }}" hx-swap="outerHTML"
+                            hx-confirm="Remove this exercise from the template?"
+                            class="text-red-500 hover:underline text-xs">Remove</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="p-4 text-center text-gray-400">No exercises in this template yet.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
