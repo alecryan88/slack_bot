@@ -4,29 +4,37 @@ Receives Slack messages, reacts with 👀, and replies in-thread using GPT-4o wi
 
 ## Architecture
 
-```
-User       Slack      API Gateway    Ack Lambda       SQS         Process Lambda   OpenAI     Slack API
- │          │              │              │              │               │             │           │
- │─── msg ─▶│              │              │              │               │             │           │
- │          │─── POST ────▶│              │              │               │             │           │
- │          │              │── invoke ───▶│              │               │             │           │
- │          │              │              │ is thread reply? ──▶ skip    │             │           │
- │          │              │              │ is bot message? ────▶ skip   │             │           │
- │          │              │              │ is retry? ──────────▶ skip   │             │           │
- │          │◀─── 200 ─────────────────── │              │               │             │           │
- │◀─ 👀 ────│              │              │─ send msg ──▶│               │             │           │
- │          │              │              │              │── trigger ───▶│             │           │
- │          │              │              │              │               │─── gpt-4o ─▶│           │
- │          │              │              │              │               │  (w/ tools) │           │
- │          │              │              │              │               │◀── reply ───│           │
- │          │              │              │              │               │─ postMessage ──────────▶│
- │          │◀──────────────────────────────────────────────────────────────── reply ─────────────│
- │◀─ reply ─│              │              │              │               │             │           │
-```
+```mermaid
+sequenceDiagram
+    actor User
+    participant Slack
+    participant API Gateway
+    participant Ack Lambda
+    participant SQS
+    participant Process Lambda
+    participant OpenAI
+    participant Slack API
 
-## Demo
+    User->>Slack: sends message
+    Slack->>API Gateway: POST event
+    API Gateway->>Ack Lambda: invoke
 
-![Demo](example.png)
+    alt is thread reply, bot message, or retry
+        Ack Lambda-->>Slack: 200 (skip)
+    else new top-level message
+        Ack Lambda->>Slack API: reactions.add (👀)
+        Ack Lambda-->>Slack: 200
+        Ack Lambda->>SQS: send message
+        SQS->>Process Lambda: trigger
+        Process Lambda->>OpenAI: chat (gpt-4o + tools)
+        OpenAI-->>Process Lambda: tool_call: search_github_repos
+        Process Lambda->>Process Lambda: call GitHub API
+        Process Lambda->>OpenAI: tool result
+        OpenAI-->>Process Lambda: final reply
+        Process Lambda->>Slack API: chat.postMessage (thread reply)
+        Slack API-->>User: reply in thread
+    end
+```
 
 ## How it works
 
@@ -35,6 +43,10 @@ When a user sends a message in a Slack channel, Slack POSTs the event to an API 
 The **Process Lambda** is triggered by SQS and handles the slow work. It sends the message to **GPT-4o** along with a `search_github_repos` tool definition. If GPT decides a GitHub search is needed, it returns a tool call with a query — the Lambda executes the GitHub API request, feeds the results back to GPT, and GPT generates a final response. The reply is posted back to Slack as a thread reply on the original message.
 
 The reason we split into two Lambdas is Slack's retry behavior — if Slack doesn't receive a `200` within 3 seconds, it assumes the request failed and retries the event. If we processed the LLM call in the same Lambda that acks Slack, a slow LLM response would trigger retries and the same message would be processed multiple times. By returning `200` immediately and offloading to SQS, we prevent duplicate processing.
+
+## Demo
+
+![Demo](example.png)
 
 ## Prerequisites
 
