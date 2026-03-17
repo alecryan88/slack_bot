@@ -28,6 +28,14 @@ User       Slack      API Gateway    Ack Lambda       SQS         Process Lambda
 
 ![Demo](example.png)
 
+## How it works
+
+When a user sends a message in a Slack channel, Slack POSTs the event to an API Gateway endpoint. The **Ack Lambda** receives it, immediately reacts with 👀 to signal the message was received, and returns a `200` to Slack — all within the 3-second window Slack requires. It then drops the message onto an **SQS queue** and exits.
+
+The **Process Lambda** is triggered by SQS and handles the slow work. It sends the message to **GPT-4o** along with a `search_github_repos` tool definition. If GPT decides a GitHub search is needed, it returns a tool call with a query — the Lambda executes the GitHub API request, feeds the results back to GPT, and GPT generates a final response. The reply is posted back to Slack as a thread reply on the original message.
+
+The reason we split into two Lambdas is Slack's retry behavior — if Slack doesn't receive a `200` within 3 seconds, it assumes the request failed and retries the event. If we processed the LLM call in the same Lambda that acks Slack, a slow LLM response would trigger retries and the same message would be processed multiple times. By returning `200` immediately and offloading to SQS, we prevent duplicate processing.
+
 ## Prerequisites
 
 - AWS CLI configured (`aws configure`)
