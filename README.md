@@ -24,6 +24,10 @@ User       Slack      API Gateway    Ack Lambda       SQS         Process Lambda
  │◀─ reply ─│              │              │              │               │             │           │
 ```
 
+## Demo
+
+![Demo](example.png)
+
 ## Prerequisites
 
 - AWS CLI configured (`aws configure`)

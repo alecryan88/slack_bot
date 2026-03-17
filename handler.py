@@ -52,9 +52,9 @@ TOOLS = [
 
 
 def search_github_repos(query: str) -> str:
-    encoded = urllib.parse.quote(query)
+    # Fetch all repos (includes private) and filter by query
     req = urllib.request.Request(
-        f"https://api.github.com/search/repositories?q={encoded}&per_page=5&sort=stars",
+        "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner",
         headers={
             "Accept": "application/vnd.github+json",
             "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -62,12 +62,34 @@ def search_github_repos(query: str) -> str:
         },
     )
     with urllib.request.urlopen(req) as resp:
-        data = json.loads(resp.read().decode())
+        repos = json.loads(resp.read().decode())
 
-    results = []
-    for repo in data.get("items", []):
-        results.append(f"- {repo['full_name']} ⭐{repo['stargazers_count']}: {repo['description']} ({repo['html_url']})")
-    return "\n".join(results) if results else "No repositories found."
+    query_lower = query.lower()
+    matches = [
+        r for r in repos
+        if query_lower in r["name"].lower()
+        or query_lower in (r["description"] or "").lower()
+    ]
+
+    if not matches:
+        # Fall back to public search if nothing found in user's repos
+        encoded = urllib.parse.quote(query)
+        req = urllib.request.Request(
+            f"https://api.github.com/search/repositories?q={encoded}&per_page=5&sort=stars",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+        )
+        with urllib.request.urlopen(req) as resp:
+            data = json.loads(resp.read().decode())
+        matches_public = data.get("items", [])
+        results = [f"- {r['full_name']} ⭐{r['stargazers_count']}: {r['description']} ({r['html_url']})" for r in matches_public]
+        return "\n".join(results) if results else "No repositories found."
+
+    results = [f"- {r['full_name']} {'🔒' if r['private'] else '🌐'}: {r['description']} ({r['html_url']})" for r in matches]
+    return "\n".join(results)
 
 
 def call_llm(text: str) -> str:
