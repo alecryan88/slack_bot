@@ -8,6 +8,7 @@ import boto3
 
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SQS_QUEUE_URL = os.environ.get("SQS_QUEUE_URL")
+BOT_USER_ID = os.environ.get("BOT_USER_ID")
 
 
 def reply(channel: str, thread_ts: str, text: str):
@@ -26,6 +27,25 @@ def reply(channel: str, thread_ts: str, text: str):
     )
     with urllib.request.urlopen(req) as resp:
         print("SLACK REPLY:", resp.read().decode())
+
+
+def get_thread_history(channel: str, thread_ts: str) -> list:
+    url = f"https://slack.com/api/conversations.replies?channel={channel}&ts={thread_ts}"
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {SLACK_BOT_TOKEN}"},
+    )
+    with urllib.request.urlopen(req) as resp:
+        data = json.loads(resp.read().decode())
+    return data.get("messages", [])
+
+
+def build_messages(thread_messages: list) -> list:
+    messages = [{"role": "system", "content": "You are a helpful assistant in a Slack thread."}]
+    for msg in thread_messages:
+        role = "assistant" if msg.get("user") == BOT_USER_ID else "user"
+        messages.append({"role": role, "content": msg.get("text", "")})
+    return messages
 
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
@@ -52,7 +72,6 @@ TOOLS = [
 
 
 def search_github_repos(query: str) -> str:
-    # Fetch all repos (includes private) and filter by query
     req = urllib.request.Request(
         "https://api.github.com/user/repos?per_page=100&sort=updated&affiliation=owner",
         headers={
@@ -72,7 +91,6 @@ def search_github_repos(query: str) -> str:
     ]
 
     if not matches:
-        # Fall back to public search if nothing found in user's repos
         encoded = urllib.parse.quote(query)
         req = urllib.request.Request(
             f"https://api.github.com/search/repositories?q={encoded}&per_page=5&sort=stars",
@@ -92,10 +110,9 @@ def search_github_repos(query: str) -> str:
     return "\n".join(results)
 
 
-def call_llm(text: str) -> str:
+def call_llm(messages: list) -> str:
     from openai import OpenAI
     client = OpenAI()
-    messages = [{"role": "user", "content": text}]
 
     while True:
         response = client.chat.completions.create(
@@ -121,9 +138,6 @@ def call_llm(text: str) -> str:
             return msg.content
 
 
-
-
-
 # Lambda 1: called by API Gateway, acks Slack immediately
 def ack_handler(event, context):
     print("EVENT:", json.dumps(event))
@@ -145,17 +159,21 @@ def ack_handler(event, context):
     if event.get("headers", {}).get("x-slack-retry-num"):
         return {"statusCode": 200, "body": json.dumps({"ok": True})}
 
-    # Handle message events
     if body.get("type") == "event_callback":
         slack_event = body.get("event", {})
+        event_type = slack_event.get("type")
         is_thread_reply = slack_event.get("thread_ts") and slack_event.get("thread_ts") != slack_event.get("ts")
-        if (
-            slack_event.get("type") == "message"
-            and "text" in slack_event
+
+        should_process = (
+            "text" in slack_event
             and not slack_event.get("bot_id")
-            and not is_thread_reply
-        ):
-            # React with eyes to show the message is being processed
+            and (
+                (event_type == "message" and not is_thread_reply)  # top-level message
+                or event_type == "app_mention"                      # @mention anywhere (including threads)
+            )
+        )
+
+        if should_process:
             reaction_payload = json.dumps({
                 "channel": slack_event["channel"],
                 "timestamp": slack_event["ts"],
@@ -172,24 +190,28 @@ def ack_handler(event, context):
             with urllib.request.urlopen(req) as resp:
                 print("REACTION:", resp.read().decode())
 
+            # For thread replies use the thread root; for top-level messages the message itself becomes the thread root
+            thread_ts = slack_event.get("thread_ts") or slack_event["ts"]
+
             sqs = boto3.client("sqs")
             sqs.send_message(
                 QueueUrl=SQS_QUEUE_URL,
                 MessageBody=json.dumps({
-                    "text": slack_event["text"],
                     "channel": slack_event["channel"],
-                    "thread_ts": slack_event["ts"],
+                    "thread_ts": thread_ts,
                 }),
             )
 
     return {"statusCode": 200, "body": json.dumps({"ok": True})}
 
 
-# Lambda 2: triggered by SQS, calls LLM and replies
+# Lambda 2: triggered by SQS, fetches thread history, calls LLM and replies
 def process_handler(event, context):
     for record in event["Records"]:
         body = json.loads(record["body"])
         print("PROCESSING:", json.dumps(body))
 
-        response = call_llm(body["text"])
+        thread_messages = get_thread_history(body["channel"], body["thread_ts"])
+        messages = build_messages(thread_messages)
+        response = call_llm(messages)
         reply(body["channel"], body["thread_ts"], response)

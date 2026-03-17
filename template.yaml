@@ -17,6 +17,9 @@ Parameters:
     Type: String
     NoEcho: true
     Description: GitHub personal access token
+  SlackBotUserId:
+    Type: String
+    Description: Slack bot user ID (e.g. U012AB3CD) — find it via Slack API auth.test
 
 Resources:
   # --- IAM ---
@@ -118,6 +121,7 @@ Resources:
           SLACK_BOT_TOKEN: !Ref SlackBotToken
           OPENAI_API_KEY: !Ref OpenAIApiKey
           GITHUB_TOKEN: !Ref GitHubToken
+          BOT_USER_ID: !Ref SlackBotUserId
 
   SQSTrigger:
     Type: AWS::Lambda::EventSourceMapping

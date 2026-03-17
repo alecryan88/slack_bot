@@ -1,8 +1,25 @@
 # Slack Bot
 
-Receives Slack messages, reacts with 👀, and replies in-thread using GPT-4o with GitHub repo search tool calling.
+Receives Slack messages, reacts with 👀, and replies in-thread using GPT-4o with GitHub repo search tool calling. Reads the full thread history before responding so it maintains conversation context.
 
 ## Architecture
+
+```mermaid
+flowchart LR
+    User([User]) -->|message / @mention| Slack
+    Slack -->|POST event| APIGW[API Gateway]
+    APIGW --> AckLambda[Ack Lambda]
+    AckLambda -->|👀 reaction| Slack
+    AckLambda -->|enqueue| SQS
+    SQS --> ProcessLambda[Process Lambda]
+    ProcessLambda -->|fetch thread| Slack
+    ProcessLambda -->|chat + tools| OpenAI
+    ProcessLambda -->|search repos| GitHub[GitHub API]
+    ProcessLambda -->|reply| Slack
+    Slack --> User
+```
+
+## Detailed Sequence
 
 ```mermaid
 sequenceDiagram
@@ -12,21 +29,23 @@ sequenceDiagram
     participant Ack Lambda
     participant SQS
     participant Process Lambda
-    participant OpenAI
     participant Slack API
+    participant OpenAI
 
-    User->>Slack: sends message
+    User->>Slack: sends message or @mentions bot in thread
     Slack->>API Gateway: POST event
     API Gateway->>Ack Lambda: invoke
 
-    alt is thread reply, bot message, or retry
+    alt is bot message, or thread reply without @mention
         Ack Lambda-->>Slack: 200 (skip)
-    else new top-level message
+    else new top-level message or @mention in thread
         Ack Lambda->>Slack API: reactions.add (👀)
         Ack Lambda-->>Slack: 200
         Ack Lambda->>SQS: send message
         SQS->>Process Lambda: trigger
-        Process Lambda->>OpenAI: chat (gpt-4o + tools)
+        Process Lambda->>Slack API: conversations.replies (fetch thread)
+        Slack API-->>Process Lambda: thread history
+        Process Lambda->>OpenAI: chat (gpt-4o + tools + thread history)
         OpenAI-->>Process Lambda: tool_call: search_github_repos
         Process Lambda->>Process Lambda: call GitHub API
         Process Lambda->>OpenAI: tool result
@@ -40,9 +59,13 @@ sequenceDiagram
 
 When a user sends a message in a Slack channel, Slack POSTs the event to an API Gateway endpoint. The **Ack Lambda** receives it, immediately reacts with 👀 to signal the message was received, and returns a `200` to Slack — all within the 3-second window Slack requires. It then drops the message onto an **SQS queue** and exits.
 
-The **Process Lambda** is triggered by SQS and handles the slow work. It sends the message to **GPT-4o** along with a `search_github_repos` tool definition. If GPT decides a GitHub search is needed, it returns a tool call with a query — the Lambda executes the GitHub API request, feeds the results back to GPT, and GPT generates a final response. The reply is posted back to Slack as a thread reply on the original message.
+The **Process Lambda** is triggered by SQS and handles the slow work. It first fetches the full Slack thread history via `conversations.replies`, then sends it to **GPT-4o** as conversation history along with a `search_github_repos` tool definition. This means the bot has full context of everything said in the thread before it responds. If GPT decides a GitHub search is needed, it returns a tool call — the Lambda executes it, feeds the results back, and GPT generates a final response posted as a thread reply.
 
-The reason we split into two Lambdas is Slack's retry behavior — if Slack doesn't receive a `200` within 3 seconds, it assumes the request failed and retries the event. If we processed the LLM call in the same Lambda that acks Slack, a slow LLM response would trigger retries and the same message would be processed multiple times. By returning `200` immediately and offloading to SQS, we prevent duplicate processing.
+The bot responds to:
+- **Top-level messages** in channels it's in
+- **@mentions** anywhere, including inside existing threads
+
+The reason we split into two Lambdas is Slack's retry behavior — if Slack doesn't receive a `200` within 3 seconds, it retries the event. By returning `200` immediately and offloading to SQS, we prevent duplicate processing.
 
 ## Demo
 
@@ -83,9 +106,18 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 
 Under **Subscribe to bot events** add:
 - `message.channels`
+- `app_mention`
 - `message.im` (optional, for DMs)
 
-### 5. Add bot to a channel
+### 5. Find your Bot User ID
+
+```bash
+curl -H "Authorization: Bearer xoxb-your-token" https://slack.com/api/auth.test
+```
+
+Copy the `user_id` field (e.g. `U012AB3CD`).
+
+### 6. Add bot to a channel
 
 In Slack: `/invite @your-bot-name`
 
@@ -119,7 +151,8 @@ aws cloudformation deploy \
     ImageUri=<account-id>.dkr.ecr.us-east-1.amazonaws.com/slack-lambda:latest \
     SlackBotToken=xoxb-... \
     OpenAIApiKey=sk-... \
-    GitHubToken=github_pat_...
+    GitHubToken=github_pat_... \
+    SlackBotUserId=U012AB3CD
 ```
 
 ### 4. Get the API Gateway URL
@@ -161,6 +194,7 @@ aws lambda update-function-code \
 | `SQS_QUEUE_URL` | Ack | URL of the SQS queue |
 | `OPENAI_API_KEY` | Process | OpenAI API key |
 | `GITHUB_TOKEN` | Process | GitHub personal access token |
+| `BOT_USER_ID` | Process | Slack bot user ID (e.g. `U012AB3CD`) |
 
 ## Teardown
 
