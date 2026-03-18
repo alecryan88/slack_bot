@@ -36,6 +36,10 @@ def ack_handler(event, context):
     raw = event.get("body") or "{}"
     if event.get("isBase64Encoded"):
         raw = base64.b64decode(raw).decode("utf-8")
+
+    if not _verify_slack_signature(event, raw):
+        return {"statusCode": 403, "body": json.dumps({"error": "invalid signature"})}
+
     body = json.loads(raw)
 
     if body.get("type") == "url_verification":
@@ -44,9 +48,6 @@ def ack_handler(event, context):
             "headers": {"Content-Type": "application/json"},
             "body": json.dumps({"challenge": body["challenge"]}),
         }
-
-    if not _verify_slack_signature(event, raw):
-        return {"statusCode": 403, "body": json.dumps({"error": "invalid signature"})}
 
     if event.get("headers", {}).get("x-slack-retry-num"):
         return {"statusCode": 200, "body": json.dumps({"ok": True})}
