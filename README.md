@@ -12,10 +12,10 @@ flowchart LR
     Slack --> User
 
     subgraph AWS
-        Lambda --> SQS --> Lambda2[Lambda]
+        Ack[Ack Lambda] --> SQS --> Process[Process Lambda]
     end
 
-    Lambda2 <-->|Claude + GitHub tools| Anthropic([Anthropic API])
+    Process <-->|Claude + GitHub tools| Anthropic([Anthropic API])
 ```
 
 ## Detailed Sequence
