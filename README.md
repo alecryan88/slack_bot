@@ -6,17 +6,16 @@ Receives Slack messages, reacts with 👀, and replies in-thread using Claude So
 
 ```mermaid
 flowchart LR
-    User([User]) -->|message / @mention| Slack
-    Slack -->|POST event| APIGW[API Gateway]
-    APIGW --> AckLambda[Ack Lambda]
-    AckLambda -->|👀 reaction| Slack
-    AckLambda -->|enqueue| SQS
-    SQS --> ProcessLambda[Process Lambda]
-    ProcessLambda -->|fetch thread| Slack
-    ProcessLambda -->|chat + GitHub MCP| Anthropic
-    Anthropic -->|MCP tool calls| GitHub[GitHub MCP Server]
-    ProcessLambda -->|reply| Slack
+    User([User]) -->|message| Slack
+    Slack -->|event| AWS
+    AWS -->|reply| Slack
     Slack --> User
+
+    subgraph AWS
+        Lambda --> SQS --> Lambda2[Lambda]
+    end
+
+    Lambda2 <-->|Claude + GitHub tools| Anthropic([Anthropic API])
 ```
 
 ## Detailed Sequence
