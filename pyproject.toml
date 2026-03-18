@@ -6,5 +6,5 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "boto3>=1.42.68",
-    "openai>=1.0.0",
+    "anthropic>=0.50.0",
 ]

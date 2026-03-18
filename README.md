@@ -1,6 +1,6 @@
 # Slack Bot
 
-Receives Slack messages, reacts with 👀, and replies in-thread using GPT-4o with GitHub repo search tool calling. Reads the full thread history before responding so it maintains conversation context.
+Receives Slack messages, reacts with 👀, and replies in-thread using Claude Opus 4.6 connected to the GitHub MCP server. Reads the full thread history before responding so it maintains conversation context.
 
 ## Architecture
 
@@ -13,8 +13,8 @@ flowchart LR
     AckLambda -->|enqueue| SQS
     SQS --> ProcessLambda[Process Lambda]
     ProcessLambda -->|fetch thread| Slack
-    ProcessLambda -->|chat + tools| OpenAI
-    ProcessLambda -->|search repos| GitHub[GitHub API]
+    ProcessLambda -->|chat + GitHub MCP| Anthropic
+    Anthropic -->|MCP tool calls| GitHub[GitHub MCP Server]
     ProcessLambda -->|reply| Slack
     Slack --> User
 ```
@@ -30,7 +30,8 @@ sequenceDiagram
     participant SQS
     participant Process Lambda
     participant Slack API
-    participant OpenAI
+    participant Anthropic
+    participant GitHub MCP
 
     User->>Slack: sends message or @mentions bot in thread
     Slack->>API Gateway: POST event
@@ -45,11 +46,10 @@ sequenceDiagram
         SQS->>Process Lambda: trigger
         Process Lambda->>Slack API: conversations.replies (fetch thread)
         Slack API-->>Process Lambda: thread history
-        Process Lambda->>OpenAI: chat (gpt-4o + tools + thread history)
-        OpenAI-->>Process Lambda: tool_call: search_github_repos
-        Process Lambda->>Process Lambda: call GitHub API
-        Process Lambda->>OpenAI: tool result
-        OpenAI-->>Process Lambda: final reply
+        Process Lambda->>Anthropic: chat (claude-opus-4-6 + GitHub MCP + thread history)
+        Anthropic->>GitHub MCP: tool calls (server-side)
+        GitHub MCP-->>Anthropic: tool results
+        Anthropic-->>Process Lambda: final reply
         Process Lambda->>Slack API: chat.postMessage (thread reply)
         Slack API-->>User: reply in thread
     end
@@ -59,7 +59,7 @@ sequenceDiagram
 
 When a user sends a message in a Slack channel, Slack POSTs the event to an API Gateway endpoint. The **Ack Lambda** receives it, immediately reacts with 👀 to signal the message was received, and returns a `200` to Slack — all within the 3-second window Slack requires. It then drops the message onto an **SQS queue** and exits.
 
-The **Process Lambda** is triggered by SQS and handles the slow work. It first fetches the full Slack thread history via `conversations.replies`, then sends it to **GPT-4o** as conversation history along with a `search_github_repos` tool definition. This means the bot has full context of everything said in the thread before it responds. If GPT decides a GitHub search is needed, it returns a tool call — the Lambda executes it, feeds the results back, and GPT generates a final response posted as a thread reply.
+The **Process Lambda** is triggered by SQS and handles the slow work. It first fetches the full Slack thread history via `conversations.replies`, then sends it to **Claude Opus 4.6** along with access to the **GitHub MCP server**. This means the bot has full context of the thread and can search repos, read files, create issues, manage PRs, and more — all handled server-side by Anthropic's MCP connector. Claude generates a final response posted as a thread reply.
 
 The bot responds to:
 - **Top-level messages** in channels it's in
@@ -76,7 +76,7 @@ The reason we split into two Lambdas is Slack's retry behavior — if Slack does
 - AWS CLI configured (`aws configure`)
 - Docker
 - Slack app (see Configure Slack below)
-- OpenAI API key
+- Anthropic API key
 - GitHub personal access token (read-only, public repos)
 
 ## Configure Slack
@@ -150,7 +150,7 @@ aws cloudformation deploy \
   --parameter-overrides \
     ImageUri=<account-id>.dkr.ecr.us-east-1.amazonaws.com/slack-lambda:latest \
     SlackBotToken=xoxb-... \
-    OpenAIApiKey=sk-... \
+    AnthropicApiKey=sk-ant-... \
     GitHubToken=github_pat_... \
     SlackBotUserId=U012AB3CD
 ```
@@ -192,7 +192,7 @@ aws lambda update-function-code \
 |---|---|---|
 | `SLACK_BOT_TOKEN` | Both | Bot User OAuth Token (`xoxb-...`) |
 | `SQS_QUEUE_URL` | Ack | URL of the SQS queue |
-| `OPENAI_API_KEY` | Process | OpenAI API key |
+| `ANTHROPIC_API_KEY` | Process | Anthropic API key |
 | `GITHUB_TOKEN` | Process | GitHub personal access token |
 | `BOT_USER_ID` | Process | Slack bot user ID (e.g. `U012AB3CD`) |
 

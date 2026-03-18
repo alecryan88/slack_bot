@@ -9,10 +9,10 @@ Parameters:
     Type: String
     NoEcho: true
     Description: Slack bot token (xoxb-...)
-  OpenAIApiKey:
+  AnthropicApiKey:
     Type: String
     NoEcho: true
-    Description: OpenAI API key
+    Description: Anthropic API key
   GitHubToken:
     Type: String
     NoEcho: true
@@ -20,6 +20,10 @@ Parameters:
   SlackBotUserId:
     Type: String
     Description: Slack bot user ID (e.g. U012AB3CD) — find it via Slack API auth.test
+  SlackSigningSecret:
+    Type: String
+    NoEcho: true
+    Description: Slack signing secret (from App credentials page)
 
 Resources:
   # --- IAM ---
@@ -103,6 +107,7 @@ Resources:
         Variables:
           SLACK_BOT_TOKEN: !Ref SlackBotToken
           SQS_QUEUE_URL: !Ref SlackQueue
+          SLACK_SIGNING_SECRET: !Ref SlackSigningSecret
 
   ProcessLambda:
     Type: AWS::Lambda::Function
@@ -119,7 +124,7 @@ Resources:
       Environment:
         Variables:
           SLACK_BOT_TOKEN: !Ref SlackBotToken
-          OPENAI_API_KEY: !Ref OpenAIApiKey
+          ANTHROPIC_API_KEY: !Ref AnthropicApiKey
           GITHUB_TOKEN: !Ref GitHubToken
           BOT_USER_ID: !Ref SlackBotUserId
 
