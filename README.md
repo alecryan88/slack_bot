@@ -15,7 +15,8 @@ flowchart LR
         Ack[Ack Lambda] --> SQS --> Process[Process Lambda]
     end
 
-    Process -->|chat| Anthropic([Anthropic API])
+    Process -->|fetch thread history| Slack
+    Process -->|chat| Anthropic([Anthropic API - stateless])
     Anthropic <-->|MCP| GitHub([GitHub])
 ```
 
