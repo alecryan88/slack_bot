@@ -1,6 +1,6 @@
 # Slack Bot
 
-Receives Slack messages, reacts with 👀, and replies in-thread using Claude Opus 4.6 connected to the GitHub MCP server. Reads the full thread history before responding so it maintains conversation context.
+Receives Slack messages, reacts with 👀, and replies in-thread using Claude Sonnet 4.6 connected to the GitHub MCP server. Reads the full thread history before responding so it maintains conversation context. All incoming requests are verified against Slack's signing secret before processing.
 
 ## Architecture
 
@@ -46,7 +46,7 @@ sequenceDiagram
         SQS->>Process Lambda: trigger
         Process Lambda->>Slack API: conversations.replies (fetch thread)
         Slack API-->>Process Lambda: thread history
-        Process Lambda->>Anthropic: chat (claude-opus-4-6 + GitHub MCP + thread history)
+        Process Lambda->>Anthropic: chat (claude-sonnet-4-6 + GitHub MCP + thread history)
         Anthropic->>GitHub MCP: tool calls (server-side)
         GitHub MCP-->>Anthropic: tool results
         Anthropic-->>Process Lambda: final reply
@@ -59,7 +59,7 @@ sequenceDiagram
 
 When a user sends a message in a Slack channel, Slack POSTs the event to an API Gateway endpoint. The **Ack Lambda** receives it, immediately reacts with 👀 to signal the message was received, and returns a `200` to Slack — all within the 3-second window Slack requires. It then drops the message onto an **SQS queue** and exits.
 
-The **Process Lambda** is triggered by SQS and handles the slow work. It first fetches the full Slack thread history via `conversations.replies`, then sends it to **Claude Opus 4.6** along with access to the **GitHub MCP server**. This means the bot has full context of the thread and can search repos, read files, create issues, manage PRs, and more — all handled server-side by Anthropic's MCP connector. Claude generates a final response posted as a thread reply.
+The **Process Lambda** is triggered by SQS and handles the slow work. It first fetches the full Slack thread history via `conversations.replies`, then sends it to **Claude Sonnet 4.6** along with access to the **GitHub MCP server**. This means the bot has full context of the thread and can search repos, read files, create issues, manage PRs, and more — all handled server-side by Anthropic's MCP connector. Claude generates a final response posted as a thread reply.
 
 The bot responds to:
 - **Top-level messages** in channels it's in
@@ -109,7 +109,11 @@ Under **Subscribe to bot events** add:
 - `app_mention`
 - `message.im` (optional, for DMs)
 
-### 5. Find your Bot User ID
+### 5. Copy your Signing Secret
+
+**Basic Information** → **App Credentials** → copy the **Signing Secret**. This is passed as `SlackSigningSecret` when deploying.
+
+### 6. Find your Bot User ID
 
 ```bash
 curl -H "Authorization: Bearer xoxb-your-token" https://slack.com/api/auth.test
@@ -117,7 +121,7 @@ curl -H "Authorization: Bearer xoxb-your-token" https://slack.com/api/auth.test
 
 Copy the `user_id` field (e.g. `U012AB3CD`).
 
-### 6. Add bot to a channel
+### 7. Add bot to a channel
 
 In Slack: `/invite @your-bot-name`
 
@@ -152,7 +156,8 @@ aws cloudformation deploy \
     SlackBotToken=xoxb-... \
     AnthropicApiKey=sk-ant-... \
     GitHubToken=github_pat_... \
-    SlackBotUserId=U012AB3CD
+    SlackBotUserId=U012AB3CD \
+    SlackSigningSecret=your-signing-secret
 ```
 
 ### 4. Get the API Gateway URL
@@ -191,6 +196,7 @@ aws lambda update-function-code \
 | Variable | Lambda | Description |
 |---|---|---|
 | `SLACK_BOT_TOKEN` | Both | Bot User OAuth Token (`xoxb-...`) |
+| `SLACK_SIGNING_SECRET` | Ack | Slack app signing secret (Basic Information → App Credentials) |
 | `SQS_QUEUE_URL` | Ack | URL of the SQS queue |
 | `ANTHROPIC_API_KEY` | Process | Anthropic API key |
 | `GITHUB_TOKEN` | Process | GitHub personal access token |
