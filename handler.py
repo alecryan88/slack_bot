@@ -19,7 +19,10 @@ def _verify_slack_signature(event, raw_body: str) -> bool:
     timestamp = headers.get("x-slack-request-timestamp", "")
     signature = headers.get("x-slack-signature", "")
 
-    if abs(time.time() - int(timestamp)) > 300:
+    try:
+        if abs(time.time() - int(timestamp)) > 300:
+            return False
+    except (ValueError, TypeError):
         return False
 
     sig_basestring = f"v0:{timestamp}:{raw_body}"
