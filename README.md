@@ -6,7 +6,7 @@
 
 ```mermaid
 flowchart LR
-    User([User]) -->|@mention| Slack
+    User([User]) -->|"@mention"| Slack
     Slack -->|event| AWS
     AWS -->|reply| Slack
     Slack --> User
