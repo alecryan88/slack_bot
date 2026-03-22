@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Slack events Lambda function with SQS and LLM processing
+Description: Slack Bolt Lambda with GitHub MCP and lazy listener processing
 
 Parameters:
   ImageUri:
@@ -17,9 +17,6 @@ Parameters:
     Type: String
     NoEcho: true
     Description: GitHub personal access token
-  SlackBotUserId:
-    Type: String
-    Description: Slack bot user ID (e.g. U012AB3CD) — find it via Slack API auth.test
   SlackSigningSecret:
     Type: String
     NoEcho: true
@@ -27,10 +24,10 @@ Parameters:
 
 Resources:
   # --- IAM ---
-  AckLambdaRole:
+  SlackLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: slack-ack-lambda-role
+      RoleName: slack-lambda-role
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -41,112 +38,46 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: SendToSQS
+        - PolicyName: SelfInvoke
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
-                Action: sqs:SendMessage
-                Resource: !GetAtt SlackQueue.Arn
+                Action: lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:slack-bolt-handler"
 
-  ProcessLambdaRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: slack-process-lambda-role
-      AssumeRolePolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-      Policies:
-        - PolicyName: ConsumeFromSQS
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - sqs:ReceiveMessage
-                  - sqs:DeleteMessage
-                  - sqs:GetQueueAttributes
-                Resource: !GetAtt SlackQueue.Arn
-
-  # --- SQS ---
-  SlackQueueDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: slack-events-dlq
-      MessageRetentionPeriod: 1209600  # 14 days
-
-  SlackQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: slack-events
-      VisibilityTimeout: 120
-      RedrivePolicy:
-        deadLetterTargetArn: !GetAtt SlackQueueDLQ.Arn
-        maxReceiveCount: 3
-
-  # --- Lambdas ---
-  AckLambda:
+  # --- Lambda ---
+  SlackLambda:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: slack-ack-handler
+      FunctionName: slack-bolt-handler
       PackageType: Image
       Code:
         ImageUri: !Ref ImageUri
       ImageConfig:
-        Command: ["handler.ack_handler"]
-      Role: !GetAtt AckLambdaRole.Arn
-      Timeout: 10
-      MemorySize: 128
-      Environment:
-        Variables:
-          SLACK_BOT_TOKEN: !Ref SlackBotToken
-          SQS_QUEUE_URL: !Ref SlackQueue
-          SLACK_SIGNING_SECRET: !Ref SlackSigningSecret
-
-  ProcessLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: slack-process-handler
-      PackageType: Image
-      Code:
-        ImageUri: !Ref ImageUri
-      ImageConfig:
-        Command: ["handler.process_handler"]
-      Role: !GetAtt ProcessLambdaRole.Arn
+        Command: ["handler.handler"]
+      Role: !GetAtt SlackLambdaRole.Arn
       Timeout: 120
       MemorySize: 256
       Environment:
         Variables:
           SLACK_BOT_TOKEN: !Ref SlackBotToken
+          SLACK_SIGNING_SECRET: !Ref SlackSigningSecret
           ANTHROPIC_API_KEY: !Ref AnthropicApiKey
           GITHUB_TOKEN: !Ref GitHubToken
-          BOT_USER_ID: !Ref SlackBotUserId
-
-  SQSTrigger:
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      EventSourceArn: !GetAtt SlackQueue.Arn
-      FunctionName: !GetAtt ProcessLambda.Arn
-      BatchSize: 1
 
   # --- API Gateway ---
   HttpApi:
     Type: AWS::ApiGatewayV2::Api
     Properties:
-      Name: slack-lambda-api
+      Name: slack-bolt-api
       ProtocolType: HTTP
-      Target: !GetAtt AckLambda.Arn
+      Target: !GetAtt SlackLambda.Arn
 
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:
-      FunctionName: !GetAtt AckLambda.Arn
+      FunctionName: !GetAtt SlackLambda.Arn
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*/*"

@@ -1,22 +1,22 @@
 # Slack Bot
 
-Receives Slack messages, reacts with 👀, and replies in-thread using Claude Sonnet 4.6 connected to the GitHub MCP server. Reads the full thread history before responding so it maintains conversation context. All incoming requests are verified against Slack's signing secret before processing.
+@mention the bot in any channel or thread and it replies using Claude Sonnet 4.6 connected to the GitHub MCP server. Posts a "Thinking..." message immediately while the LLM runs, then edits it in place with the response. Reads the last 10 messages of thread history for context. All incoming requests are verified against Slack's signing secret.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    User([User]) -->|message| Slack
+    User([User]) -->|@mention| Slack
     Slack -->|event| AWS
     AWS -->|reply| Slack
     Slack --> User
 
     subgraph AWS
-        Ack[Ack Lambda] --> SQS --> Process[Process Lambda]
+        Lambda -->|re-invokes lazy| Lambda
     end
 
-    Process -->|fetch thread history| Slack
-    Process -->|chat| Anthropic([Anthropic API - stateless])
+    Lambda -->|fetch thread history| Slack
+    Lambda -->|chat| Anthropic([Anthropic API])
     Anthropic <-->|MCP| GitHub([GitHub])
 ```
 
@@ -27,46 +27,45 @@ sequenceDiagram
     actor User
     participant Slack
     participant API Gateway
-    participant Ack Lambda
-    participant SQS
-    participant Process Lambda
+    participant Lambda
     participant Slack API
     participant Anthropic
     participant GitHub MCP
 
-    User->>Slack: sends message or @mentions bot in thread
+    User->>Slack: @mentions bot
     Slack->>API Gateway: POST event
-    API Gateway->>Ack Lambda: invoke
+    API Gateway->>Lambda: invoke (invocation 1 — ack)
 
-    alt is bot message, or thread reply without @mention
-        Ack Lambda-->>Slack: 200 (skip)
-    else new top-level message or @mention in thread
-        Ack Lambda->>Slack API: reactions.add (👀)
-        Ack Lambda-->>Slack: 200
-        Ack Lambda->>SQS: send message
-        SQS->>Process Lambda: trigger
-        Process Lambda->>Slack API: conversations.replies (fetch thread)
-        Slack API-->>Process Lambda: thread history
-        Process Lambda->>Anthropic: chat (claude-sonnet-4-6 + GitHub MCP + thread history)
+    alt Slack retry (x-slack-retry-num header)
+        Lambda-->>Slack: 200 (ignored)
+    else first delivery
+        Lambda->>Slack API: chat.postMessage ("Thinking...")
+        Lambda-->>Slack: 200
+        Lambda->>Lambda: invoke self async (lazy listener)
+
+        Note over Lambda: invocation 2 — lazy
+        Lambda->>Slack API: conversations.replies (fetch thread)
+        Slack API-->>Lambda: thread history (oldest 10)
+        Lambda->>Anthropic: messages (claude-sonnet-4-6 + GitHub MCP + thread)
         Anthropic->>GitHub MCP: tool calls (server-side)
         GitHub MCP-->>Anthropic: tool results
-        Anthropic-->>Process Lambda: final reply
-        Process Lambda->>Slack API: chat.postMessage (thread reply)
-        Slack API-->>User: reply in thread
+        Anthropic-->>Lambda: response
+        Lambda->>Slack API: chat.update ("Thinking..." → response)
+        Slack API-->>User: reply appears in thread
     end
 ```
 
 ## How it works
 
-When a user sends a message in a Slack channel, Slack POSTs the event to an API Gateway endpoint. The **Ack Lambda** receives it, immediately reacts with 👀 to signal the message was received, and returns a `200` to Slack — all within the 3-second window Slack requires. It then drops the message onto an **SQS queue** and exits.
+Built on the [Slack Bolt](https://slack.dev/bolt-python/) framework using its **lazy listener** pattern for AWS Lambda.
 
-The **Process Lambda** is triggered by SQS and handles the slow work. It first fetches the full Slack thread history via `conversations.replies`, then sends it to **Claude Sonnet 4.6** along with access to the **GitHub MCP server**. This means the bot has full context of the thread and can search repos, read files, create issues, manage PRs, and more — all handled server-side by Anthropic's MCP connector. Claude generates a final response posted as a thread reply.
+When an `@mention` arrives, Slack POSTs the event to API Gateway. The **first Lambda invocation** (ack) posts "Thinking..." to the thread and immediately returns `200` to Slack — well within the 3-second window. It then re-invokes the same Lambda function asynchronously (`InvocationType=Event`) to run the lazy listener.
 
-The bot responds to:
-- **Top-level messages** in channels it's in
-- **@mentions** anywhere, including inside existing threads
+The **second Lambda invocation** (lazy) does the slow work: fetches the thread history via `conversations.replies`, passes the last 10 messages as context to Claude Sonnet 4.6 with access to the GitHub MCP server, and edits the "Thinking..." message in place with the final response.
 
-The reason we split into two Lambdas is Slack's retry behavior — if Slack doesn't receive a `200` within 3 seconds, it retries the event. By returning `200` immediately and offloading to SQS, we prevent duplicate processing.
+Slack retries are silently dropped via middleware (`x-slack-retry-num` header check) to prevent duplicate responses.
+
+The bot responds to **@mentions** in channels and threads. DMs are handled separately.
 
 ## Demo
 
@@ -76,15 +75,18 @@ The reason we split into two Lambdas is Slack's retry behavior — if Slack does
 
 - AWS CLI configured (`aws configure`)
 - Docker
+- [uv](https://docs.astral.sh/uv/) (for dependency management)
 - Slack app (see Configure Slack below)
 - Anthropic API key
-- GitHub personal access token (read-only, public repos)
+- GitHub personal access token
 
 ## Configure Slack
 
 ### 1. Create a Slack app
 
-Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From scratch**
+Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From a manifest** → paste `manifest.json`
+
+Or manually:
 
 ### 2. Add Bot Token Scopes
 
@@ -92,35 +94,39 @@ Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** �
 
 | Scope | Purpose |
 |---|---|
+| `app_mentions:read` | Receive @mention events |
 | `channels:history` | Read messages in public channels |
+| `chat:write` | Post and edit messages |
 | `im:history` | Read direct messages |
-| `chat:write` | Post replies in threads |
-| `reactions:write` | Add 👀 reaction to messages |
+| `im:write` | Post DM replies |
+| `groups:history` | Read messages in private channels |
+| `reactions:write` | Add emoji reactions |
 
-### 3. Install the app
-
-**OAuth & Permissions** → **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
-
-### 4. Enable Event Subscriptions
+### 3. Enable Event Subscriptions
 
 **Event Subscriptions** → toggle **On** → paste your API Gateway URL as the Request URL.
 
 Under **Subscribe to bot events** add:
-- `message.channels`
 - `app_mention`
-- `message.im` (optional, for DMs)
+- `message.channels`
+- `message.im`
+- `message.groups`
+- `app_home_opened`
 
-### 5. Copy your Signing Secret
+### 4. Enable Interactivity
 
-**Basic Information** → **App Credentials** → copy the **Signing Secret**. This is passed as `SlackSigningSecret` when deploying.
+**Interactivity & Shortcuts** → toggle **On** → paste the same API Gateway URL.
 
-### 6. Find your Bot User ID
+### 5. Install the app
 
-```bash
-curl -H "Authorization: Bearer xoxb-your-token" https://slack.com/api/auth.test
-```
+**OAuth & Permissions** → **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
 
-Copy the `user_id` field (e.g. `U012AB3CD`).
+### 6. Copy credentials
+
+- **Bot Token** (`xoxb-...`): OAuth & Permissions
+- **Signing Secret**: Basic Information → App Credentials
+- **Anthropic API key**: [console.anthropic.com](https://console.anthropic.com)
+- **GitHub token**: GitHub → Settings → Developer settings → Personal access tokens
 
 ### 7. Add bot to a channel
 
@@ -157,7 +163,6 @@ aws cloudformation deploy \
     SlackBotToken=xoxb-... \
     AnthropicApiKey=sk-ant-... \
     GitHubToken=github_pat_... \
-    SlackBotUserId=U012AB3CD \
     SlackSigningSecret=your-signing-secret
 ```
 
@@ -170,7 +175,7 @@ aws cloudformation describe-stacks \
   --output text
 ```
 
-Paste this URL as the **Request URL** in Slack Event Subscriptions.
+Paste this URL as the **Request URL** in Slack Event Subscriptions and Interactivity.
 
 ## Redeploy after code changes
 
@@ -182,26 +187,40 @@ docker build --platform linux/amd64 -t slack-lambda .
 docker tag slack-lambda:latest <account-id>.dkr.ecr.us-east-1.amazonaws.com/slack-lambda:latest
 docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/slack-lambda:latest
 
-# Update both Lambdas
 aws lambda update-function-code \
-  --function-name slack-ack-handler \
-  --image-uri <account-id>.dkr.ecr.us-east-1.amazonaws.com/slack-lambda:latest
-
-aws lambda update-function-code \
-  --function-name slack-process-handler \
+  --function-name slack-bolt-handler \
   --image-uri <account-id>.dkr.ecr.us-east-1.amazonaws.com/slack-lambda:latest
 ```
 
 ## Environment Variables
 
-| Variable | Lambda | Description |
-|---|---|---|
-| `SLACK_BOT_TOKEN` | Both | Bot User OAuth Token (`xoxb-...`) |
-| `SLACK_SIGNING_SECRET` | Ack | Slack app signing secret (Basic Information → App Credentials) |
-| `SQS_QUEUE_URL` | Ack | URL of the SQS queue |
-| `ANTHROPIC_API_KEY` | Process | Anthropic API key |
-| `GITHUB_TOKEN` | Process | GitHub personal access token |
-| `BOT_USER_ID` | Process | Slack bot user ID (e.g. `U012AB3CD`) |
+| Variable | Description |
+|---|---|
+| `SLACK_BOT_TOKEN` | Bot User OAuth Token (`xoxb-...`) |
+| `SLACK_SIGNING_SECRET` | Slack app signing secret |
+| `ANTHROPIC_API_KEY` | Anthropic API key |
+| `GITHUB_TOKEN` | GitHub personal access token |
+
+## Local development
+
+Use the Lambda container locally with the AWS Lambda Runtime Interface Emulator:
+
+```bash
+docker build --platform linux/amd64 -t slack-lambda .
+docker run -p 9000:8080 \
+  -e SLACK_BOT_TOKEN=xoxb-... \
+  -e SLACK_SIGNING_SECRET=... \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e GITHUB_TOKEN=github_pat_... \
+  slack-lambda
+```
+
+Invoke the function locally:
+
+```bash
+curl -X POST http://localhost:9000/2015-03-31/functions/function/invocations \
+  -d '{"body": "..."}'
+```
 
 ## Teardown
 

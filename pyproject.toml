@@ -2,9 +2,11 @@
 name = "practice"
 version = "0.1.0"
 description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
-    "boto3>=1.42.68",
     "anthropic>=0.50.0",
+    "slack-bolt>=1.21.0",
 ]
+
+[tool.setuptools.packages.find]
+include = ["ai*", "listeners*"]
