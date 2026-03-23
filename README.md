@@ -35,7 +35,7 @@ When an `@mention` arrives, Lambda must respond to Slack within 3 seconds or Sla
 
 The second invocation fetches the last 50 messages of thread history, sends them to Claude Sonnet 4.6 with access to the GitHub MCP server, and edits the "Thinking..." message in place with the response.
 
-The bot responds to **@mentions** in channels and threads. DMs are handled separately.
+The bot responds to **@mentions** in channels and threads.
 
 ## Demo
 
@@ -56,49 +56,18 @@ The bot responds to **@mentions** in channels and threads. DMs are handled separ
 
 Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → **From a manifest** → paste `manifest.json`
 
-Or manually:
-
-### 2. Add Bot Token Scopes
-
-**OAuth & Permissions** → **Bot Token Scopes**:
-
-| Scope | Purpose |
-|---|---|
-| `app_mentions:read` | Receive @mention events |
-| `channels:history` | Read messages in public channels |
-| `chat:write` | Post and edit messages |
-| `im:history` | Read direct messages |
-| `im:write` | Post DM replies |
-| `groups:history` | Read messages in private channels |
-| `reactions:write` | Add emoji reactions |
-
-### 3. Enable Event Subscriptions
-
-**Event Subscriptions** → toggle **On** → paste your API Gateway URL as the Request URL.
-
-Under **Subscribe to bot events** add:
-- `app_mention`
-- `message.channels`
-- `message.im`
-- `message.groups`
-- `app_home_opened`
-
-### 4. Enable Interactivity
-
-**Interactivity & Shortcuts** → toggle **On** → paste the same API Gateway URL.
-
-### 5. Install the app
+### 2. Install the app
 
 **OAuth & Permissions** → **Install to Workspace** → copy the **Bot User OAuth Token** (`xoxb-...`)
 
-### 6. Copy credentials
+### 3. Copy credentials
 
 - **Bot Token** (`xoxb-...`): OAuth & Permissions
 - **Signing Secret**: Basic Information → App Credentials
 - **Anthropic API key**: [console.anthropic.com](https://console.anthropic.com)
 - **GitHub token**: GitHub → Settings → Developer settings → Personal access tokens
 
-### 7. Add bot to a channel
+### 4. Add bot to a channel
 
 In Slack: `/invite @your-bot-name`
 
