@@ -5,22 +5,34 @@
 ## Architecture
 
 ```mermaid
-flowchart LR
-    User([User]) -->|"@mention"| Slack
-
-    subgraph AWS
-        direction TB
-        APIGW[API Gateway] --> Lambda1[Lambda\nack]
-        Lambda1 -->|async invoke| Lambda2[Lambda\nlazy]
+flowchart TD
+    subgraph User
+        A(["`**@mention** bot`"])
+        F([See response in thread])
     end
 
-    Slack -->|POST event| APIGW
-    Lambda1 -->|Thinking...| Slack
-    Lambda2 -->|fetch thread| Slack
-    Lambda2 -->|messages API| Anthropic([Anthropic])
-    Anthropic <-->|tool calls| GitHub([GitHub MCP])
-    Lambda2 -->|update message| Slack
-    Slack --> User
+    subgraph Slack
+        B[Receive event]
+        E[Post & update messages]
+    end
+
+    subgraph AWS
+        C[API Gateway → Lambda]
+        D["`Post **Thinking...**
+        Async invoke lazy Lambda`"]
+        G["`Fetch thread history
+        Call LLM
+        Update message`"]
+    end
+
+    subgraph LLM
+        H[Claude + GitHub MCP]
+    end
+
+    A --> B --> C --> D --> E
+    D -->|async| G
+    G <--> H
+    G --> E --> F
 ```
 
 ## Detailed Sequence
