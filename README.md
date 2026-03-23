@@ -1,23 +1,26 @@
 # Slack Bot
 
-@mention the bot in any channel or thread and it replies using Claude Sonnet 4.6 connected to the GitHub MCP server. Posts a "Thinking..." message immediately while the LLM runs, then edits it in place with the response. Reads the last 10 messages of thread history for context. All incoming requests are verified against Slack's signing secret.
+@mention the bot in any channel or thread and it replies using Claude Sonnet 4.6 connected to the GitHub MCP server. Posts a "Thinking..." message immediately while the LLM runs, then edits it in place with the response. Reads the last 50 messages of thread history for context. All incoming requests are verified against Slack's signing secret.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
     User([User]) -->|"@mention"| Slack
-    Slack -->|event| AWS
-    AWS -->|reply| Slack
-    Slack --> User
 
     subgraph AWS
-        Lambda -->|re-invokes lazy| Lambda
+        direction TB
+        APIGW[API Gateway] --> Lambda1[Lambda\nack]
+        Lambda1 -->|async invoke| Lambda2[Lambda\nlazy]
     end
 
-    Lambda -->|fetch thread history| Slack
-    Lambda -->|chat| Anthropic([Anthropic API])
-    Anthropic <-->|MCP| GitHub([GitHub])
+    Slack -->|POST event| APIGW
+    Lambda1 -->|Thinking...| Slack
+    Lambda2 -->|fetch thread| Slack
+    Lambda2 -->|messages API| Anthropic([Anthropic])
+    Anthropic <-->|tool calls| GitHub([GitHub MCP])
+    Lambda2 -->|update message| Slack
+    Slack --> User
 ```
 
 ## Detailed Sequence
@@ -45,7 +48,7 @@ sequenceDiagram
 
         Note over Lambda: invocation 2 — lazy
         Lambda->>Slack API: conversations.replies (fetch thread)
-        Slack API-->>Lambda: thread history (oldest 10)
+        Slack API-->>Lambda: thread history (oldest 50)
         Lambda->>Anthropic: messages (claude-sonnet-4-6 + GitHub MCP + thread)
         Anthropic->>GitHub MCP: tool calls (server-side)
         GitHub MCP-->>Anthropic: tool results

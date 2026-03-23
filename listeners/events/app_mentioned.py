@@ -29,7 +29,7 @@ def app_mentioned_callback(client: WebClient, event: dict, logger: Logger):
 
     try:
         replies = client.conversations_replies(
-            channel=channel_id, ts=thread_ts, limit=10
+            channel=channel_id, ts=thread_ts, limit=50
         )["messages"]
 
         # Find the "Thinking..." message posted by the ack to update it later

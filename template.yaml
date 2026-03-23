@@ -57,7 +57,7 @@ Resources:
       ImageConfig:
         Command: ["handler.handler"]
       Role: !GetAtt SlackLambdaRole.Arn
-      Timeout: 120
+      Timeout: 300
       MemorySize: 256
       Environment:
         Variables:

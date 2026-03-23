@@ -31,7 +31,7 @@ def app_messaged_callback(client: WebClient, event: dict, logger: Logger):
 
             if thread_ts:
                 replies = client.conversations_replies(
-                    channel=channel_id, limit=10, ts=thread_ts
+                    channel=channel_id, limit=50, ts=thread_ts
                 )["messages"]
                 thinking_ts = next(
                     (m["ts"] for m in reversed(replies) if m.get("text") == DEFAULT_LOADING_TEXT),

@@ -26,7 +26,7 @@ def handle_summary_function_callback(
     try:
         user_context = inputs["user_context"]
         channel_id = inputs["channel_id"]
-        history = client.conversations_history(channel=channel_id, limit=10)["messages"]
+        history = client.conversations_history(channel=channel_id, limit=50)["messages"]
         conversation = parse_conversation(history)
 
         summary = get_provider_response(
