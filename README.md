@@ -31,11 +31,9 @@ sequenceDiagram
 
 Built on the [Slack Bolt](https://slack.dev/bolt-python/) framework using its **lazy listener** pattern for AWS Lambda.
 
-When an `@mention` arrives, Slack POSTs the event to API Gateway. The **first Lambda invocation** (ack) posts "Thinking..." to the thread and immediately returns `200` to Slack — well within the 3-second window. It then re-invokes the same Lambda function asynchronously (`InvocationType=Event`) to run the lazy listener.
+When an `@mention` arrives, Lambda must respond to Slack within 3 seconds or Slack will retry. To handle this, the first invocation posts "Thinking..." and immediately returns `200`, then re-invokes itself asynchronously to do the slow work.
 
-The **second Lambda invocation** (lazy) does the slow work: fetches the thread history via `conversations.replies`, passes the last 10 messages as context to Claude Sonnet 4.6 with access to the GitHub MCP server, and edits the "Thinking..." message in place with the final response.
-
-Slack retries are silently dropped via middleware (`x-slack-retry-num` header check) to prevent duplicate responses.
+The second invocation fetches the last 50 messages of thread history, sends them to Claude Sonnet 4.6 with access to the GitHub MCP server, and edits the "Thinking..." message in place with the response.
 
 The bot responds to **@mentions** in channels and threads. DMs are handled separately.
 
