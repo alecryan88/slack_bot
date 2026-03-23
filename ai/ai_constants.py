@@ -15,8 +15,3 @@ Format all responses using Slack mrkdwn syntax:
 - > for blockquotes
 - <https://url|link text> for hyperlinks (not [text](url))
 Do not use standard Markdown syntax — it will not render correctly in Slack."""
-
-DM_SYSTEM_CONTENT = """
-This is a private DM between you and user.
-You are the user's helpful AI assistant.
-"""

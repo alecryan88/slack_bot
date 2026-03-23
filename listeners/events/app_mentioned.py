@@ -24,7 +24,8 @@ def app_mentioned_callback(client: WebClient, event: dict, logger: Logger):
     channel_id = event.get("channel")
     thread_ts = event.get("thread_ts") or event["ts"]
     user_id = event.get("user")
-    text = event.get("text")
+    raw_text = event.get("text", "")
+    text = " ".join(w for w in raw_text.split() if not w.startswith("<@")).strip()
     thinking_ts = None
 
     try:
