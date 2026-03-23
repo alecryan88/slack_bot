@@ -11,7 +11,7 @@ jobs:
     timeout-minutes: 5
     strategy:
       matrix:
-        python-version: ["3.13"]
+        python-version: ["3.11"]
 
     steps:
       - uses: actions/checkout@v6
@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -U pip
-          pip install anthropic certifi slack-bolt ruff
+          pip install anthropic slack-bolt ruff
       - name: Lint and check formatting with ruff
         run: |
           ruff check .
