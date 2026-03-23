@@ -5,69 +5,26 @@
 ## Architecture
 
 ```mermaid
-flowchart TD
-    subgraph User
-        A(["`**@mention** bot`"])
-        F([See response in thread])
-    end
-
-    subgraph Slack
-        B[Receive event]
-        E[Post & update messages]
-    end
-
-    subgraph AWS
-        C[API Gateway → Lambda]
-        D["`Post **Thinking...**
-        Async invoke lazy Lambda`"]
-        G["`Fetch thread history
-        Call LLM
-        Update message`"]
-    end
-
-    subgraph LLM
-        H[Claude + GitHub MCP]
-    end
-
-    A --> B --> C --> D --> E
-    D -->|async| G
-    G <--> H
-    G --> E --> F
-```
-
-## Detailed Sequence
-
-```mermaid
 sequenceDiagram
     actor User
     participant Slack
-    participant API Gateway
     participant Lambda
-    participant Slack API
-    participant Anthropic
-    participant GitHub MCP
+    participant LLM
+    participant GitHub
 
-    User->>Slack: @mentions bot
-    Slack->>API Gateway: POST event
-    API Gateway->>Lambda: invoke (invocation 1 — ack)
+    User->>Slack: @mention bot
+    Slack->>Lambda: POST event
+    Lambda->>Slack: post "Thinking..."
+    Lambda->>Lambda: async invoke lazy listener
 
-    alt Slack retry (x-slack-retry-num header)
-        Lambda-->>Slack: 200 (ignored)
-    else first delivery
-        Lambda->>Slack API: chat.postMessage ("Thinking...")
-        Lambda-->>Slack: 200
-        Lambda->>Lambda: invoke self async (lazy listener)
-
-        Note over Lambda: invocation 2 — lazy
-        Lambda->>Slack API: conversations.replies (fetch thread)
-        Slack API-->>Lambda: thread history (oldest 50)
-        Lambda->>Anthropic: messages (claude-sonnet-4-6 + GitHub MCP + thread)
-        Anthropic->>GitHub MCP: tool calls (server-side)
-        GitHub MCP-->>Anthropic: tool results
-        Anthropic-->>Lambda: response
-        Lambda->>Slack API: chat.update ("Thinking..." → response)
-        Slack API-->>User: reply appears in thread
-    end
+    Lambda->>Slack: fetch thread history
+    Slack-->>Lambda: last 50 messages
+    Lambda->>LLM: send thread + system prompt
+    LLM->>GitHub: tool calls via MCP
+    GitHub-->>LLM: tool results
+    LLM-->>Lambda: response
+    Lambda->>Slack: update "Thinking..." with response
+    Slack-->>User: reply appears in thread
 ```
 
 ## How it works
