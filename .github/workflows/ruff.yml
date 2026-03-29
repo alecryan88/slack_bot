@@ -22,7 +22,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -U pip
-          pip install anthropic slack-bolt ruff
+          pip install openai-agents slack-bolt ruff
       - name: Lint and check formatting with ruff
         run: |
           ruff check .

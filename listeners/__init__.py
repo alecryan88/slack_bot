@@ -1,4 +1,4 @@
-from listeners import events
+from . import events
 
 
 def register_listeners(app):
