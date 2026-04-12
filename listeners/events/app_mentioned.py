@@ -24,8 +24,14 @@ def app_mentioned(ack, client: WebClient, event: dict, logger: Logger):
         replies = client.conversations_replies(
             channel=channel_id, ts=thread_ts, limit=50
         )["messages"]
-        context_messages = [m for m in replies[:-1] if m.get("text") != DEFAULT_LOADING_TEXT]
-        response = get_response(text, parse_conversation(context_messages)) if text else MENTION_WITHOUT_TEXT
+        context_messages = [
+            m for m in replies[:-1] if m.get("text") != DEFAULT_LOADING_TEXT
+        ]
+        response = (
+            get_response(text, parse_conversation(context_messages))
+            if text
+            else MENTION_WITHOUT_TEXT
+        )
         client.chat_update(channel=channel_id, ts=thinking_ts, text=response)
 
     except Exception as e:
