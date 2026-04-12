@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A Slack bot that handles `@mention` events via AWS Lambda + API Gateway, passes thread context to an AI agent (using the `openai-agents` SDK), and responds using GitHub MCP tools for authenticated GitHub access.
 
+## Rules
+
+- Always run `ruff check .` before committing code. Fix any errors before creating a commit.
+
 ## Commands
 
 **Dependency management (uses `uv`):**
