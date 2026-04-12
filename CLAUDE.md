@@ -8,7 +8,7 @@ A Slack bot that handles `@mention` events via AWS Lambda + API Gateway, passes 
 
 ## Rules
 
-- Always run `ruff check .` before committing code. Fix any errors before creating a commit.
+- Always run `ruff check .` and `ruff format --check .` before committing code. Run `ruff format .` to fix formatting, then re-check before creating a commit.
 
 ## Commands
 
