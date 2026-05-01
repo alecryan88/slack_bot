@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.11"
 dependencies = [
-    "openai-agents>=0.0.19",
+    "openai-agents>=0.14.8",
     "slack-bolt>=1.21.0",
 ]
 
